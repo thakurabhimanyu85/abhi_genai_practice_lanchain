@@ -1,7 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "agent": "./002_Agent_Langraph_AgentUI.py:agent"
+    "agent": "./005_LLM_Prompt_Template_Langraph_endpoint_Lansmith.py:agent"
   },
   "env": ".env"
 }
