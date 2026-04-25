@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "./002_Agent_Langraph_AgentUI.py:agent"
+  },
+  "env": ".env"
+}
