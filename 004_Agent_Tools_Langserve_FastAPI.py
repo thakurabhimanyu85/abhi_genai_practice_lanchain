@@ -1,68 +1,91 @@
 from dotenv import load_dotenv
 load_dotenv()
+
 from langchain.chat_models import init_chat_model
-from langchain_core.prompts import ChatPromptTemplate
-from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain.agents.factory import create_agent
 from langchain_core.tools import tool
+from langchain_core.runnables import RunnableLambda
+from pydantic import BaseModel
 from fastapi import FastAPI
 from langserve import add_routes
 import uvicorn
 
-model = init_chat_model(model="llama-3.1-8b-instant", model_provider="groq", temperature=0.7)
 
-# Define tools that the agent can use
+# ------------------ MODEL ------------------
+model = init_chat_model(
+    model="llama-3.1-8b-instant",
+    model_provider="groq",
+    temperature=0.7
+)
+
+
+class InputSchema(BaseModel):
+    input: str
+# ------------------ TOOLS ------------------
 @tool
 def get_topic_info(topic: str) -> str:
     """Get information about a specific topic"""
-    # Placeholder - in real app, this would call an API or database
     return f"Information about {topic}: This is a helpful summary."
+
 
 @tool
 def search_web(query: str) -> str:
     """Search the web for information"""
-    # Placeholder - in real app, this would call a search API like Tavily
     return f"Search results for '{query}': Found relevant information..."
+
 
 @tool
 def get_definition(word: str) -> str:
     """Get the definition of a word"""
     return f"Definition of '{word}': A concise meaning of the term."
 
+
 tools = [get_topic_info, search_web, get_definition]
 
-# Create the prompt
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", "You are a helpful assistant with access to tools. Use the tools when the user asks for information."),
-        ("human", "{input}"),
-    ]
+
+# ------------------ AGENT ------------------
+agent = create_agent(
+    model=model,
+    tools=tools,
+    system_prompt="You are a helpful assistant with access to tools. Use tools when needed."
 )
 
-# Create the agent
-agent = create_tool_calling_agent(model, tools, prompt)
 
-# Create AgentExecutor to run the agent
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+# ------------------ INPUT ADAPTER ------------------
+def adapt_input(x):
+    return {
+        "messages": [
+            {"role": "user", "content": x["input"]}
+        ]
+    }
 
-# Initialize FastAPI app
+
+# ------------------ OUTPUT ADAPTER ------------------
+def adapt_output(x):
+    try:
+        return x["model"]["messages"][-1].content
+    except Exception:
+        return str(x)
+# ------------------ FINAL PIPELINE ------------------
+final_agent = (
+    RunnableLambda(adapt_input)
+    | agent
+    | RunnableLambda(adapt_output)
+)
+
+
+# ------------------ FASTAPI ------------------
 app = FastAPI(
     title="Chatbot with Tools",
     version="1.0",
-    description="A Chatbot with tool-calling capabilities using LangChain and LangServe"
+    description="LangServe agent with simple textbox UI"
 )
 
-# Add routes for the agent executor
-add_routes(app, agent_executor, path="/langserve_agent_with_tools")
 
-# Run the server
+# ------------------ LANGSERVE ROUTES ------------------
+add_routes(app, final_agent, path="/langserve_agent_with_tools",input_type=InputSchema )   
+
+
+# ------------------ RUN SERVER ------------------
 if __name__ == "__main__":
     uvicorn.run(app, host="localhost", port=8004)
-
-
-#create_agent does not accept a human_prompt argument. It only takes system_prompt
-# country = "India"
-
-# response = agent_executor.invoke(
-#     {"input": f"What is the capital of {country}?"}
-# )
-# print(response["output"])
